@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Callity TTS Player</title>
+</head>
+<body>
+  <h1>🎧 GPT-Antwort anhören</h1>
+  <button onclick="playAudio()">Jetzt abspielen</button>
+  <br><br>
+  <audio id="audioPlayer" controls style="display:none;">
+    <source id="audioSource" src="" type="audio/wav">
+    Dein Browser unterstützt kein Audio.
+  </audio>
+
+  <script>
+    function playAudio() {
+      const player = document.getElementById("audioPlayer");
+      const source = document.getElementById("audioSource");
+      source.src = "/tts?t=" + new Date().getTime(); // cache-busting
+      player.load();
+      player.style.display = "block";
+      player.play();
+    }
+  </script>
+</body>
+</html>

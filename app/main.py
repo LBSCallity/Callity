@@ -1,20 +1,19 @@
-# ✅ main.py
 from fastapi import FastAPI, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import Response, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
+import os
+
 from app.audio_stream import router as audio_router
 
-# .env laden
+# 🔄 .env laden (API-Keys etc.)
 load_dotenv()
 
-# App starten
+# 🚀 FastAPI starten
 app = FastAPI()
 
-# WebSocket-Route einbinden
-app.include_router(audio_router)
-
-# CORS für lokale Tests / ngrok
+# 🌐 CORS (offen für lokale Tests)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,16 +21,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Dummy-Webhook für SignalWire / Twilio
-@app.post("/signalwire/voice")
-async def signalwire_voice(request: Request):
-    stream_url = "wss://6033-2a01-599-b0d-2fb3-1424-9313-a560-f56f.ngrok-free.app/ws/audio"
+# 🧩 WebSocket einbinden
+app.include_router(audio_router)
 
-    response_xml = f"""<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<Response>
-    <Connect>
-        <Stream url=\"{stream_url}\" />
-    </Connect>
-</Response>
-"""
-    return PlainTextResponse(content=response_xml.strip(), media_type="text/xml")
+# 🗂️ Statische Dateien (für HTML/Audio)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# 📤 TTS-WAV-Datei als Download/Stream bereitstellen
+@app.get("/tts")
+async def get_tts():
+    tts_path = "output.wav"
+    if os.path.exists(tts_path):
+        return FileResponse(
+            path=tts_path,
+            media_type="audio/wav",
+            filename="antwort.wav"
+        )
+    return {"error": "Keine TTS-Datei vorhanden"}
+
+# (Optional: Später aktivieren, wenn Telefonintegration läuft)
+# @app.post("/twilio/voice")
+# async def twilio_voice(request: Request):
+#     ...
