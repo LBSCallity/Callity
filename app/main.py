@@ -100,9 +100,9 @@ async def twilio_voice(request: Request):
             <Parameter name="audioFormat" value="linear16" />
         </Stream>
     </Start>
-    <Say language="de-DE" voice="alice">Willkommen bei Callity. Bitte sprechen Sie jetzt.</Say>
     <Pause length="60"/>
 </Response>
+
 
 """
     return Response(content=twiml.strip(), media_type="text/xml")
