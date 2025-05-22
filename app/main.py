@@ -88,18 +88,18 @@ async def upload_wav(file: UploadFile = File(...)):
         print("❌ Fehler bei Deepgram:", e)
         return {"error": str(e)}
 
-# 📞 Twilio (optional, vorbereitend)
- @app.post("/twilio/voice")
- async def twilio_voice(request: Request):
-     stream_url = "wss://callity.onrender.com/ws/audio"
-     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
-     <Response>
-         <Start>
-             <Stream url="{stream_url}">
-                 <Parameter name="audioFormat" value="linear16" />
-             </Stream>
-         </Start>
-         <Say language="de-DE" voice="alice">Willkommen bei Callity. Wie kann ich helfen?</Say>
-         <Pause length="60"/>
-     </Response>"""
-     return Response(content=twiml.strip(), media_type="text/xml")
+# 📞 Twilio Webhook: Anruf starten
+@app.post("/twilio/voice")
+async def twilio_voice(request: Request):
+    stream_url = "wss://callity.onrender.com/ws/audio"
+    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Start>
+        <Stream url="{stream_url}">
+            <Parameter name="audioFormat" value="linear16" />
+        </Stream>
+    </Start>
+    <Say language="de-DE" voice="alice">Willkommen bei Callity. Wie kann ich helfen?</Say>
+    <Pause length="60"/>
+</Response>"""
+    return Response(content=twiml.strip(), media_type="text/xml")
