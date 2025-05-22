@@ -1,0 +1,18 @@
+# Bytecode
+__pycache__/
+*.py[cod]
+
+# Umgebungsvariablen
+.env
+
+# Audio
+*.wav
+*.mp3
+
+# Editor/OS
+.vscode/
+.DS_Store
+*.log
+
+# Virtualenv
+venv/
