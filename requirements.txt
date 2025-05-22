@@ -4,3 +4,5 @@ python-dotenv
 websockets
 openai
 requests
+aiofiles
+python-multipart
