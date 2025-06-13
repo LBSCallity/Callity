@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, UploadFile, File
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
@@ -13,7 +13,7 @@ import websockets
 from app.audio_stream import router as audio_router
 from app.gpt_logic import process_transcript
 
-# 🔐 .env laden
+# .env laden
 load_dotenv()
 
 # 🚀 FastAPI starten
@@ -27,13 +27,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 📡 WebSocket-Router einbinden
+# 📡 WebSocket-Route einbinden
 app.include_router(audio_router)
 
-# 📂 Statische Dateien bereitstellen
+# 📂 Statische Dateien (z. B. HTML/TTS-Player)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# 🎧 TTS-Datei abrufen
+# 🔊 Root-Endpunkt zur Statusprüfung
+@app.get("/")
+def root():
+    return {"status": "Callity läuft"}
+
+# 🎧 TTS-Audio abrufen
 @app.get("/tts")
 async def get_tts():
     path = "output.wav"
@@ -41,7 +46,7 @@ async def get_tts():
         return FileResponse(path, media_type="audio/wav", filename="antwort.wav")
     return {"error": "Keine TTS-Datei vorhanden"}
 
-# 📤 WAV-Datei hochladen und testen
+# 🧪 Testupload für WAV-Dateien (Deepgram-Test ohne Anruf)
 @app.post("/upload_wav")
 async def upload_wav(file: UploadFile = File(...)):
     temp_path = "temp_upload.wav"
@@ -86,7 +91,7 @@ async def upload_wav(file: UploadFile = File(...)):
         print("❌ Fehler bei Deepgram:", e)
         return {"error": str(e)}
 
-# 📞 Vonage: NCCO JSON für eingehende Anrufe
+# 📞 Vonage: Antwort mit NCCO-Plan für eingehenden Anruf
 @app.get("/vonage/answer")
 async def vonage_answer():
     return JSONResponse(content=[
@@ -100,9 +105,18 @@ async def vonage_answer():
         }
     ])
 
-# (Optional) Call-Events loggen
-@app.post("/vonage/event")
+# 📊 Vonage-Events (Call status, errors, etc.)
+@app.api_route("/vonage/event", methods=["GET", "POST"])
 async def vonage_event(request: Request):
-    data = await request.json()
-    print("📞 Vonage-Event:", data)
-    return {"status": "ok"}
+    try:
+        if request.method == "POST":
+            data = await request.json()
+        else:
+            data = dict(request.query_params)
+
+        print("📞 Vonage-Event:", data)
+        return PlainTextResponse("OK", status_code=200)
+
+    except Exception as e:
+        print("❌ Fehler im Event-Webhook:", e)
+        return PlainTextResponse("error", status_code=500)
