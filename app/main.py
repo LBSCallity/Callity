@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, UploadFile, File
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
@@ -30,10 +30,10 @@ app.add_middleware(
 # 📡 WebSocket-Router einbinden
 app.include_router(audio_router)
 
-# 📂 Statische HTML-Dateien (z. B. TTS-Player)
+# 📂 Statische Dateien bereitstellen
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# 🎧 TTS-WAV-Datei abrufen
+# 🎧 TTS-Datei abrufen
 @app.get("/tts")
 async def get_tts():
     path = "output.wav"
@@ -41,19 +41,17 @@ async def get_tts():
         return FileResponse(path, media_type="audio/wav", filename="antwort.wav")
     return {"error": "Keine TTS-Datei vorhanden"}
 
-# 📤 WAV-Datei hochladen und verarbeiten
+# 📤 WAV-Datei hochladen und testen
 @app.post("/upload_wav")
 async def upload_wav(file: UploadFile = File(...)):
     temp_path = "temp_upload.wav"
 
-    # Datei speichern
     async with aiofiles.open(temp_path, 'wb') as out_file:
         content = await file.read()
         await out_file.write(content)
 
     print(f"📂 Datei empfangen: {file.filename} ({len(content)} Bytes)")
 
-    # Deepgram-Verbindung
     DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
     DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen?language=de"
 
@@ -88,21 +86,23 @@ async def upload_wav(file: UploadFile = File(...)):
         print("❌ Fehler bei Deepgram:", e)
         return {"error": str(e)}
 
-# 📞 Twilio-Webhook mit stabilem TwiML
-@app.post("/twilio/voice")
-async def twilio_voice(request: Request):
-    stream_url = "wss://callity.onrender.com/ws/audio"
+# 📞 Vonage: NCCO JSON für eingehende Anrufe
+@app.get("/vonage/answer")
+async def vonage_answer():
+    return JSONResponse(content=[
+        {
+            "action": "talk",
+            "text": "Hallo, Sie sprechen mit dem Callity Voicebot."
+        },
+        {
+            "action": "stream",
+            "streamUrl": ["wss://callity.onrender.com/ws/audio"]
+        }
+    ])
 
-    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Start>
-        <Stream url="wss://callity.onrender.com/ws/audio">
-            <Parameter name="audioFormat" value="linear16" />
-        </Stream>
-    </Start>
-    <Pause length="60"/>
-</Response>
-
-
-"""
-    return Response(content=twiml.strip(), media_type="text/xml")
+# (Optional) Call-Events loggen
+@app.post("/vonage/event")
+async def vonage_event(request: Request):
+    data = await request.json()
+    print("📞 Vonage-Event:", data)
+    return {"status": "ok"}
