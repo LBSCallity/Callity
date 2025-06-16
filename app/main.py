@@ -4,6 +4,12 @@ from fastapi.responses import Response, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 import json
 import os
+from fastapi.responses import FileResponse
+
+@app.get("/tts")
+def get_tts():
+    return FileResponse("static/output.wav", media_type="audio/wav")
+
 
 # Callity: Audioverarbeitung ausgelagert
 from app.audio_stream import handle_audio_stream
@@ -37,7 +43,7 @@ async def vonage_answer(request: Request):
     ncco = [
         {
             "action": "talk",
-            "text": "Hallo! Hier spricht Callity. Einen Moment bitte, ich höre zu.",
+            "text": "Hallo, hier ist Callity. Einen Moment, ich höre zu.",
             "language": "de-DE",
             "voiceName": "Marlene",
             "style": 0
@@ -56,8 +62,8 @@ async def vonage_answer(request: Request):
             ]
         }
     ]
-    print("✅ NCCO ausgeliefert")
     return Response(content=json.dumps(ncco), media_type="application/json")
+
 
 # Vonage Event-Logging
 @app.api_route("/vonage/event", methods=["GET", "POST"])

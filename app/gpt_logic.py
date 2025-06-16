@@ -1,79 +1,68 @@
+# app/gpt_logic.py
 import os
+import requests
 from openai import OpenAI
 from dotenv import load_dotenv
-import requests
 
-# 🔐 API-Keys laden
+# 🔐 .env laden
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ELEVEN_API_KEY = os.getenv("ELEVEN_API_KEY")
+VOICE_ID = os.getenv("ELEVEN_VOICE_ID") or "EXAVITQu4vr4xnSDxMaL"  # Deutsch: Nicole
 
 if not OPENAI_API_KEY:
-    raise RuntimeError("❌ OPENAI_API_KEY fehlt in .env")
+    raise RuntimeError("❌ OPENAI_API_KEY fehlt")
 if not ELEVEN_API_KEY:
-    raise RuntimeError("❌ ELEVEN_API_KEY fehlt in .env")
+    raise RuntimeError("❌ ELEVEN_API_KEY fehlt")
 
-# GPT-Client initialisieren
+# GPT-Client
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# 🔊 ElevenLabs Voice ID (Deutsch: z. B. Nicole)
-VOICE_ID = "EXAVITQu4vr4xnSDxMaL"  # Du kannst auch andere IDs verwenden
-
-# 🎤 Hauptfunktion: Transkript → GPT → Audio
+# 🔁 Hauptfunktion: Text → GPT → TTS → WAV
 async def process_transcript(transcript: str):
-    print(f"📩 Eingehender Text an GPT: {transcript}")
+    print(f"📩 Anfrage an GPT: {transcript}")
 
     try:
         # 🧠 GPT-Antwort erzeugen
-        response = client.chat.completions.create(
-            model="gpt-4",
+        completion = client.chat.completions.create(
+            model="gpt-4o",
             messages=[
-                {"role": "system", "content": "Du bist ein freundlicher deutschsprachiger Telefonassistent."},
+                {"role": "system", "content": "Du bist ein deutschsprachiger, natürlicher Telefonassistent. Antworte höflich, freundlich und kurz."},
                 {"role": "user", "content": transcript}
             ],
-            temperature=0.7,
+            temperature=0.6,
             max_tokens=200
         )
 
-        reply = response.choices[0].message.content.strip()
+        reply = completion.choices[0].message.content.strip()
         print(f"🤖 GPT-Antwort: {reply}")
 
-        # 🎧 TTS mit ElevenLabs
-        tts_response = requests.post(
+        # 🎧 ElevenLabs TTS
+        response = requests.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}",
             headers={
                 "xi-api-key": ELEVEN_API_KEY,
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "Accept": "audio/wav"
             },
             json={
                 "text": reply,
+                "model_id": "eleven_multilingual_v2",
                 "voice_settings": {
-                    "stability": 0.5,
+                    "stability": 0.4,
                     "similarity_boost": 0.75
                 }
             }
         )
 
-        if tts_response.status_code == 200:
-            with open("output.wav", "wb") as f:
-                f.write(tts_response.content)
-            print("🔉 TTS-Audio gespeichert als output.wav")
-
-            # Optional: direkt abspielen
-            try:
-                import platform
-                system = platform.system()
-                if system == "Darwin":
-                    os.system("afplay output.wav")       # macOS
-                elif system == "Linux":
-                    os.system("aplay output.wav")         # Linux
-                elif system == "Windows":
-                    import winsound
-                    winsound.PlaySound("output.wav", winsound.SND_FILENAME)
-            except Exception as e:
-                print(f"🎧 Wiedergabe fehlgeschlagen: {e}")
+        if response.status_code == 200:
+            # Stelle sicher, dass das File in /static liegt
+            output_path = os.path.join("static", "output.wav")
+            with open(output_path, "wb") as f:
+                f.write(response.content)
+            print("💾 TTS-Audio gespeichert unter static/output.wav")
         else:
-            print("❌ TTS-Fehler:", tts_response.status_code, tts_response.text)
+            print("❌ TTS-Antwort ungültig:", response.status_code, response.text)
 
     except Exception as e:
-        print(f"❌ GPT- oder TTS-Fehler:\n{e}")
+        print(f"❌ Fehler bei GPT oder TTS:\n{e}")
