@@ -62,14 +62,17 @@ async def vonage_answer(request: Request):
             "endpoint": [
                 {
                     "type": "websocket",
-                    "uri": VONAGE_WS_URL,
-                    "content-type": "audio/l16;rate=16000"
+                    "uri": "wss://callity.onrender.com/ws/audio",
+                    "content-type": "audio/l16;rate=16000",
+                    "headers": {
+                        "X-Session-ID": "callity-test-123"
+                    }
                 }
             ]
         }
     ]
-    print("✅ NCCO ausgeliefert (WebSocket-Connect)")
     return Response(content=json.dumps(ncco), media_type="application/json")
+
 
 # Call-Status-Events von Vonage (optional für Logs)
 @app.api_route("/vonage/event", methods=["GET", "POST"])
