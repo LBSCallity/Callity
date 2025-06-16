@@ -58,6 +58,10 @@ async def audio_ws(websocket: WebSocket):
 async def vonage_answer(request: Request):
     ncco = [
         {
+            "action": "talk",
+            "text": "Hallo! Hier spricht Callity. Einen Moment bitte, ich höre zu."
+        },
+        {
             "action": "connect",
             "endpoint": [
                 {
@@ -65,13 +69,14 @@ async def vonage_answer(request: Request):
                     "uri": "wss://callity.onrender.com/ws/audio",
                     "content-type": "audio/l16;rate=16000",
                     "headers": {
-                        "X-Session-ID": "callity-test-123"
+                        "X-Session-ID": "callity-inbound"
                     }
                 }
             ]
         }
     ]
     return Response(content=json.dumps(ncco), media_type="application/json")
+
 
 
 # Call-Status-Events von Vonage (optional für Logs)
