@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, UploadFile, File
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
@@ -13,7 +13,7 @@ import websockets
 from app.audio_stream import router as audio_router
 from app.gpt_logic import process_transcript
 
-# .env laden
+# 🔐 .env laden
 load_dotenv()
 
 # 🚀 FastAPI starten
@@ -33,10 +33,10 @@ app.include_router(audio_router)
 # 📂 Statische Dateien (z. B. HTML/TTS-Player)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# 🔊 Root-Endpunkt zur Statusprüfung
+# 🔎 Health Check
 @app.get("/")
 def root():
-    return {"status": "Callity läuft"}
+    return {"status": "Callity läuft ✅"}
 
 # 🎧 TTS-Audio abrufen
 @app.get("/tts")
@@ -46,7 +46,7 @@ async def get_tts():
         return FileResponse(path, media_type="audio/wav", filename="antwort.wav")
     return {"error": "Keine TTS-Datei vorhanden"}
 
-# 🧪 Testupload für WAV-Dateien (Deepgram-Test ohne Anruf)
+# 📤 WAV-Datei hochladen für Test
 @app.post("/upload_wav")
 async def upload_wav(file: UploadFile = File(...)):
     temp_path = "temp_upload.wav"
@@ -91,10 +91,10 @@ async def upload_wav(file: UploadFile = File(...)):
         print("❌ Fehler bei Deepgram:", e)
         return {"error": str(e)}
 
-# 📞 Vonage: Antwort mit NCCO-Plan für eingehenden Anruf
-@app.get("/vonage/answer")
-async def vonage_answer():
-    return JSONResponse(content=[
+# 📞 Vonage → Antwort mit NCCO
+@app.api_route("/vonage/answer", methods=["GET", "POST"])
+async def vonage_answer(request: Request):
+    ncco = [
         {
             "action": "talk",
             "text": "Hallo, Sie sprechen mit dem Callity Voicebot."
@@ -103,9 +103,10 @@ async def vonage_answer():
             "action": "stream",
             "streamUrl": ["wss://callity.onrender.com/ws/audio"]
         }
-    ])
+    ]
+    return Response(content=json.dumps(ncco), media_type="application/json")
 
-# 📊 Vonage-Events (Call status, errors, etc.)
+# 📊 Vonage Events empfangen (Call status, Fehler etc.)
 @app.api_route("/vonage/event", methods=["GET", "POST"])
 async def vonage_event(request: Request):
     try:
