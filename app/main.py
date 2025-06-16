@@ -6,16 +6,17 @@ import asyncio
 import websockets
 import os
 
-# Config
+# 🔐 Deepgram-Key laden
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen?language=de"
 
-# ✅ Nutze genau diese ngrok-URL oder eigene, falls konfiguriert
-STREAM_URL = os.getenv("CALLITY_STREAM_URL", "wss://callity.onrender.com/ws/audio")
+# WebSocket-URL für Vonage (Render-Host)
+VONAGE_WS_URL = "wss://callity.onrender.com/ws/audio"
 
+# App initialisieren
 app = FastAPI()
 
-# CORS freischalten
+# CORS erlauben
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,21 +24,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 📡 WebSocket-Preflight – wichtig für Vonage
+# Preflight-Check für Vonage (optional, hilft bei Debug)
 @app.get("/ws/audio")
 async def ws_preflight():
-    return {"status": "WebSocket bereit"}
+    return {"status": "WebSocket verfügbar"}
 
-# 📶 WebSocket-Handler
+# Haupt-WebSocket-Handler
 @app.websocket("/ws/audio")
 async def audio_ws(websocket: WebSocket):
     await websocket.accept()
-    print("🚀 WebSocket verbunden")
+    print("🚀 WebSocket-Verbindung aufgebaut")
 
     headers = [("Authorization", f"Token {DEEPGRAM_API_KEY}")]
     async with websockets.connect(DEEPGRAM_URL, extra_headers=headers) as dg_ws:
 
-        async def receive_deepgram():
+        async def receive_from_deepgram():
             async for message in dg_ws:
                 print("🧾 Deepgram:", message)
 
@@ -46,32 +47,41 @@ async def audio_ws(websocket: WebSocket):
                 while True:
                     chunk = await websocket.receive_bytes()
                     await dg_ws.send(chunk)
-            except:
+            except Exception as e:
+                print("🔚 WebSocket beendet:", e)
                 await dg_ws.send(json.dumps({"type": "CloseStream"}))
 
-        await asyncio.gather(receive_deepgram(), forward_audio())
+        await asyncio.gather(receive_from_deepgram(), forward_audio())
 
-# 📞 Vonage Answer → NCCO ausliefern
+# NCCO-Endpoint für Vonage → WebSocket-Verbindung aufbauen
 @app.api_route("/vonage/answer", methods=["GET", "POST"])
 async def vonage_answer(request: Request):
     ncco = [
-        {"action": "talk", "text": "Hallo, hier ist Callity."},
-        {"action": "stream", "streamUrl": [STREAM_URL]}
+        {
+            "action": "connect",
+            "endpoint": [
+                {
+                    "type": "websocket",
+                    "uri": VONAGE_WS_URL,
+                    "content-type": "audio/l16;rate=16000"
+                }
+            ]
+        }
     ]
-    print("✅ NCCO ausgeliefert:", STREAM_URL)
+    print("✅ NCCO ausgeliefert (WebSocket-Connect)")
     return Response(content=json.dumps(ncco), media_type="application/json")
 
-# 📊 Vonage Events loggen
+# Call-Status-Events von Vonage (optional für Logs)
 @app.api_route("/vonage/event", methods=["GET", "POST"])
 async def vonage_event(request: Request):
     try:
         data = await request.json() if request.method == "POST" else dict(request.query_params)
-        print("📞 Event:", data)
+        print("📞 Vonage-Event:", data)
         return PlainTextResponse("OK")
     except Exception as e:
         return PlainTextResponse(f"error: {e}", status_code=500)
 
-# 🔍 Health Check
+# Root-Endpoint für Health-Check
 @app.get("/")
 def root():
-    return {"status": "Callity läuft lokal"}
+    return {"status": "Callity läuft auf Render (WebSocket-fähig)"}
