@@ -61,7 +61,8 @@ async def vonage_answer(request: Request):
             "action": "talk",
             "text": "Hallo! Hier spricht Callity. Einen Moment bitte, ich höre zu.",
             "language": "de-DE",
-            "voiceName": "Marlene"
+            "voiceName": "Marlene",
+            "style": 0  # Style = neutral (Pflicht bei einigen Stimmen)
         },
         {
             "action": "connect",
@@ -78,6 +79,7 @@ async def vonage_answer(request: Request):
         }
     ]
     return Response(content=json.dumps(ncco), media_type="application/json")
+
 
 
 # Call-Status-Events von Vonage (optional für Logs)
