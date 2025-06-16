@@ -101,7 +101,7 @@ async def vonage_answer(request: Request):
         },
         {
             "action": "stream",
-            "streamUrl": ["wss://callity.onrender.com/ws/audio"]
+            "streamUrl": ["wss://ws.dev.echo.voice.vonage.com"]
         }
     ]
     return Response(content=json.dumps(ncco), media_type="application/json")
