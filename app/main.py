@@ -6,10 +6,6 @@ import json
 import os
 from fastapi.responses import FileResponse
 
-@app.get("/tts")
-def get_tts():
-    return FileResponse("static/output.wav", media_type="audio/wav")
-
 
 # Callity: Audioverarbeitung ausgelagert
 from app.audio_stream import handle_audio_stream
@@ -24,6 +20,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/tts")
+def get_tts():
+    return FileResponse("static/output.wav", media_type="audio/wav")
+
+
 
 # WebSocket-Preflight
 @app.get("/ws/audio")
