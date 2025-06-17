@@ -1,5 +1,4 @@
 # app/audio_stream.py
-
 import asyncio
 import json
 import websockets
@@ -13,7 +12,7 @@ DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 if not DEEPGRAM_API_KEY:
     raise RuntimeError("❌ DEEPGRAM_API_KEY fehlt")
 
-DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen?language=de&channels=1"
+DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen?language=de"
 
 async def handle_audio_stream(client_ws: WebSocket):
     print("✅ WebSocket weitergeleitet an Deepgram")
@@ -24,6 +23,7 @@ async def handle_audio_stream(client_ws: WebSocket):
             print("✅ Verbunden mit Deepgram")
 
             async def receive_transcripts():
+                print("📡 Warte auf Deepgram-Transkript...")
                 async for message in dg_ws:
                     print("🧾 Deepgram-Rohantwort:", message)
                     try:
@@ -44,9 +44,17 @@ async def handle_audio_stream(client_ws: WebSocket):
                 print("📥 Warte auf Audioframes...")
                 try:
                     while True:
-                        chunk = await client_ws.receive_bytes()
-                        await dg_ws.send(chunk)
-                        print(f"➡️ Gesendet: {len(chunk)} Bytes")
+                        message = await client_ws.receive()
+
+                        # Text-Frames ignorieren (z. B. {"event":"websocket:connected"})
+                        if "text" in message:
+                            print("⚠️ Textframe ignoriert:", message["text"])
+                            continue
+
+                        # Bytes senden
+                        if "bytes" in message:
+                            await dg_ws.send(message["bytes"])
+                            print(f"➡️ Gesendet: {len(message['bytes'])} Bytes")
                 except Exception as e:
                     print("🔚 Verbindung beendet:", e)
                     await dg_ws.send(json.dumps({"type": "CloseStream"}))
