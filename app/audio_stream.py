@@ -1,4 +1,5 @@
 # app/audio_stream.py
+
 import asyncio
 import json
 import websockets
@@ -23,7 +24,6 @@ async def handle_audio_stream(client_ws: WebSocket):
             print("✅ Verbunden mit Deepgram")
 
             async def receive_transcripts():
-                print("📡 Warte auf Deepgram-Transkript...")
                 async for message in dg_ws:
                     print("🧾 Deepgram-Rohantwort:", message)
                     try:
@@ -44,21 +44,13 @@ async def handle_audio_stream(client_ws: WebSocket):
                 print("📥 Warte auf Audioframes...")
                 try:
                     while True:
-                        message = await client_ws.receive()
-                        if message["type"] == "websocket.receive":
-                            if "bytes" in message:
-                                await dg_ws.send(message["bytes"])
-                                print(f"➡️ Gesendet: {len(message['bytes'])} Bytes")
-                            else:
-                                print("⚠️ Kein bytes-Frame:", message)
-                        elif message["type"] == "websocket.disconnect":
-                            print("❌ WebSocket wurde getrennt")
-                            break
+                        chunk = await client_ws.receive_bytes()
+                        await dg_ws.send(chunk)
+                        print(f"➡️ Gesendet: {len(chunk)} Bytes")
                 except Exception as e:
                     print("🔚 Verbindung beendet:", e)
                     await dg_ws.send(json.dumps({"type": "CloseStream"}))
 
-            await asyncio.sleep(1)  # künstliche Verzögerung
             await asyncio.gather(receive_transcripts(), forward_audio())
 
     except Exception as e:
