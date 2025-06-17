@@ -1,13 +1,15 @@
 # app/gpt_logic.py
 import os
 import requests
+import subprocess
 from openai import OpenAI
 from dotenv import load_dotenv
 
+# 🔐 .env laden
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ELEVEN_API_KEY = os.getenv("ELEVEN_API_KEY")
-VOICE_ID = os.getenv("ELEVEN_VOICE_ID") or "EXAVITQu4vr4xnSDxMaL"
+VOICE_ID = os.getenv("ELEVEN_VOICE_ID") or "EXAVITQu4vr4xnSDxMaL"  # Nicole
 
 if not OPENAI_API_KEY:
     raise RuntimeError("❌ OPENAI_API_KEY fehlt")
@@ -20,6 +22,7 @@ async def process_transcript(transcript: str):
     print(f"📩 Anfrage an GPT: {transcript}")
 
     try:
+        # GPT-4-Antwort generieren
         completion = client.chat.completions.create(
             model="gpt-4o",
             messages=[
@@ -33,12 +36,13 @@ async def process_transcript(transcript: str):
         reply = completion.choices[0].message.content.strip()
         print(f"🤖 GPT-Antwort: {reply}")
 
-        response = requests.post(
+        # TTS von ElevenLabs als MP3
+        tts_response = requests.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}",
             headers={
                 "xi-api-key": ELEVEN_API_KEY,
                 "Content-Type": "application/json",
-                "Accept": "audio/wav"
+                "Accept": "audio/mpeg"
             },
             json={
                 "text": reply,
@@ -50,13 +54,32 @@ async def process_transcript(transcript: str):
             }
         )
 
-        if response.status_code == 200:
-            output_path = os.path.join("static", "output.wav")
-            with open(output_path, "wb") as f:
-                f.write(response.content)
-            print("💾 TTS-Audio gespeichert unter static/output.wav")
+        if tts_response.status_code == 200:
+            # MP3 speichern
+            mp3_path = os.path.join("static", "output.mp3")
+            with open(mp3_path, "wb") as f:
+                f.write(tts_response.content)
+            print("💾 TTS-Audio gespeichert als output.mp3")
+
+            # Mit ffmpeg konvertieren in korrektes PCM-Format
+            wav_path = os.path.join("static", "output.wav")
+            result = subprocess.run([
+                "ffmpeg", "-y",
+                "-i", mp3_path,
+                "-ar", "16000",  # 16kHz
+                "-ac", "1",      # Mono
+                "-f", "wav",
+                wav_path
+            ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+            if result.returncode == 0:
+                print("🔁 WAV konvertiert zu PCM 16bit 16kHz Mono")
+            else:
+                print("❌ Fehler bei ffmpeg-Konvertierung:")
+                print(result.stderr.decode())
+
         else:
-            print("❌ TTS-Antwort ungültig:", response.status_code, response.text)
+            print("❌ TTS-Fehler:", tts_response.status_code, tts_response.text)
 
     except Exception as e:
-        print(f"❌ Fehler bei GPT oder TTS:\n{e}")
+        print("❌ Fehler in process_transcript():", e)

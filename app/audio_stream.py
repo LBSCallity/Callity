@@ -84,7 +84,7 @@ async def handle_audio_stream(client_ws: WebSocket):
                                 with open("debug_capture.raw", "ab") as f:
                                     f.write(message["bytes"])
                                 await dg_ws.send(message["bytes"])
-                                print(f"➡️ Frame {frame_count}: {len(message['bytes'])} Bytes")
+                               # print(f"➡️ Frame {frame_count}: {len(message['bytes'])} Bytes")
 
                             elif "text" in message:
                                 print(f"⚠️ Textframe ignoriert: {message['text']}")
