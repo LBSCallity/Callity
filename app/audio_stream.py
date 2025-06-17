@@ -3,6 +3,7 @@ import asyncio
 import json
 import websockets
 import aiofiles
+import subprocess
 from fastapi import WebSocket
 from dotenv import load_dotenv
 import os
@@ -13,7 +14,19 @@ DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 if not DEEPGRAM_API_KEY:
     raise RuntimeError("❌ DEEPGRAM_API_KEY fehlt")
 
-DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen?language=de&encoding=linear16&sample_rate=16000"
+DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen?language=de&encoding=linear16&sample_rate=16000&channels=1"
+
+
+def convert_mp3_to_wav(mp3_path: str, wav_path: str):
+    try:
+        subprocess.run([
+            "ffmpeg", "-y", "-i", mp3_path,
+            "-ar", "16000", "-ac", "1", "-f", "wav", wav_path
+        ], check=True)
+        print(f"✅ Umgewandelt: {mp3_path} → {wav_path}")
+    except subprocess.CalledProcessError as e:
+        print("❌ Fehler bei ffmpeg-Konvertierung:", e)
+
 
 async def stream_tts_to_client(client_ws: WebSocket, file_path: str):
     print("🔊 Starte Audioausgabe...")
@@ -28,6 +41,7 @@ async def stream_tts_to_client(client_ws: WebSocket, file_path: str):
         print("✅ TTS-Ausgabe beendet")
     except Exception as e:
         print("⚠️ Fehler bei TTS-Ausgabe:", e)
+
 
 async def handle_audio_stream(client_ws: WebSocket):
     print("✅ WebSocket weitergeleitet an Deepgram")
@@ -51,6 +65,7 @@ async def handle_audio_stream(client_ws: WebSocket):
 
                         if is_final and transcript:
                             await process_transcript(transcript)
+                            convert_mp3_to_wav("static/output.mp3", "static/output.wav")
                             await stream_tts_to_client(client_ws, "static/output.wav")
 
                     except Exception as e:

@@ -6,3 +6,4 @@ openai
 requests
 aiofiles
 python-multipart
+pydub
