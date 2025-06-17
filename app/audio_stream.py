@@ -22,9 +22,6 @@ async def handle_audio_stream(client_ws: WebSocket):
         async with websockets.connect(DEEPGRAM_URL, extra_headers=headers) as dg_ws:
             print("✅ Verbunden mit Deepgram")
 
-            stop_event = asyncio.Event()
-            frame_count = 0
-
             async def receive_transcripts():
                 print("📡 Warte auf Deepgram-Transkript...")
                 async for message in dg_ws:
@@ -45,6 +42,7 @@ async def handle_audio_stream(client_ws: WebSocket):
 
             async def forward_audio():
                 print("📥 Warte auf Audioframes...")
+                frame_count = 0  # Initialisierung hinzugefügt
                 try:
                     while True:
                         message = await client_ws.receive()
@@ -57,7 +55,7 @@ async def handle_audio_stream(client_ws: WebSocket):
 
                                 await dg_ws.send(message["bytes"])
                                 frame_count += 1
-                                print(f"➡️ Gesendet: Frame #{frame_count}, {len(message['bytes'])} Bytes")
+                                print(f"➡️ Frame {frame_count}: {len(message['bytes'])} Bytes")
 
                             elif "text" in message:
                                 print(f"⚠️ Textframe ignoriert: {message['text']}")
@@ -65,18 +63,13 @@ async def handle_audio_stream(client_ws: WebSocket):
 
                         elif message["type"] == "websocket.disconnect":
                             print("❌ WebSocket wurde getrennt")
-                            stop_event.set()
                             break
 
                 except Exception as e:
                     print("🔚 Verbindung beendet:", e)
-                    stop_event.set()
+                    await dg_ws.send(json.dumps({"type": "CloseStream"}))
 
             await asyncio.gather(receive_transcripts(), forward_audio())
-
-            # Sende CloseStream nachdem beide Tasks abgeschlossen sind
-            await dg_ws.send(json.dumps({"type": "CloseStream"}))
-            print("📴 CloseStream an Deepgram gesendet")
 
     except Exception as e:
         print("❌ Fehler bei Verbindung zu Deepgram:", e)
