@@ -46,15 +46,23 @@ async def handle_audio_stream(client_ws: WebSocket):
                     while True:
                         message = await client_ws.receive()
 
-                        # Text-Frames ignorieren (z. B. {"event":"websocket:connected"})
-                        if "text" in message:
-                            print("⚠️ Textframe ignoriert:", message["text"])
-                            continue
+                        if message["type"] == "websocket.receive":
+                            if "bytes" in message:
+                                # Optional: Mitschnitt zur Fehlersuche
+                                with open("debug_capture.raw", "ab") as f:
+                                    f.write(message["bytes"])
 
-                        # Bytes senden
-                        if "bytes" in message:
-                            await dg_ws.send(message["bytes"])
-                            print(f"➡️ Gesendet: {len(message['bytes'])} Bytes")
+                                await dg_ws.send(message["bytes"])
+                                print(f"➡️ Gesendet: {len(message['bytes'])} Bytes")
+
+                            elif "text" in message:
+                                print(f"⚠️ Textframe ignoriert: {message['text']}")
+                                continue
+
+                        elif message["type"] == "websocket.disconnect":
+                            print("❌ WebSocket wurde getrennt")
+                            break
+
                 except Exception as e:
                     print("🔚 Verbindung beendet:", e)
                     await dg_ws.send(json.dumps({"type": "CloseStream"}))
