@@ -25,7 +25,10 @@ app.add_middleware(
 def get_tts():
     return FileResponse("static/output.wav", media_type="audio/wav")
 
-
+@app.get("/debug-audio")
+def get_debug_audio():
+    file_path = "debug_capture.raw"
+    return FileResponse(path=file_path, filename="debug_capture.raw", media_type="application/octet-stream")
 
 # WebSocket-Preflight
 @app.get("/ws/audio")
