@@ -12,7 +12,7 @@ DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 if not DEEPGRAM_API_KEY:
     raise RuntimeError("❌ DEEPGRAM_API_KEY fehlt")
 
-DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen?language=de"
+DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen?language=de&encoding=linear16&sample_rate=16000&channels=1"
 
 async def handle_audio_stream(client_ws: WebSocket):
     print("✅ WebSocket weitergeleitet an Deepgram")
