@@ -1,6 +1,7 @@
 # app/gpt_logic.py
 import os
 import requests
+import subprocess
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -18,7 +19,22 @@ if not ELEVEN_API_KEY:
 # GPT-Client
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# 🔁 Hauptfunktion: Text → GPT → TTS → WAV
+# 🔁 WAV konvertieren für Deepgram-Kompatibilität
+async def convert_wav_to_pcm16():
+    try:
+        subprocess.run([
+            "ffmpeg", "-y",
+            "-i", "static/output.wav",
+            "-ac", "1",
+            "-ar", "16000",
+            "-sample_fmt", "s16",
+            "static/output_converted.wav"
+        ], check=True)
+        print("🔁 WAV konvertiert zu PCM 16bit 16kHz Mono")
+    except subprocess.CalledProcessError as e:
+        print("❌ Fehler bei ffmpeg-Konvertierung:", e)
+
+# 🔁 Hauptfunktion: Text → GPT → TTS → WAV → konvertiert
 async def process_transcript(transcript: str):
     print(f"📩 Anfrage an GPT: {transcript}")
 
@@ -56,11 +72,12 @@ async def process_transcript(transcript: str):
         )
 
         if response.status_code == 200:
-            # Stelle sicher, dass das File in /static liegt
             output_path = os.path.join("static", "output.wav")
             with open(output_path, "wb") as f:
                 f.write(response.content)
             print("💾 TTS-Audio gespeichert unter static/output.wav")
+
+            await convert_wav_to_pcm16()
         else:
             print("❌ TTS-Antwort ungültig:", response.status_code, response.text)
 

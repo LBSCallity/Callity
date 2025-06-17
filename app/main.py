@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import json
 import os
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 
 # Callity: Audioverarbeitung ausgelagert
@@ -20,6 +21,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+from fastapi.staticfiles import StaticFiles
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 
 @app.get("/tts")
 def get_tts():
