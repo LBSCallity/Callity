@@ -15,12 +15,10 @@ if not DEEPGRAM_API_KEY:
 DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen?language=de"
 
 async def handle_audio_stream(client_ws: WebSocket):
+    print("✅ WebSocket weitergeleitet an Deepgram")
     headers = [("Authorization", f"Token {DEEPGRAM_API_KEY}")]
 
     try:
-        await client_ws.accept()
-        print("✅ WebSocket akzeptiert")
-
         async with websockets.connect(DEEPGRAM_URL, extra_headers=headers) as dg_ws:
             print("✅ Verbunden mit Deepgram")
 
