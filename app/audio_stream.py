@@ -3,7 +3,6 @@ import asyncio
 import json
 import websockets
 import aiofiles
-import subprocess
 from fastapi import WebSocket
 from dotenv import load_dotenv
 import os
@@ -25,33 +24,22 @@ DEEPGRAM_URL = (
     "&endpointing=3000"
 )
 
-
-
-def convert_mp3_to_wav(mp3_path: str, wav_path: str):
-    try:
-        subprocess.run([
-            "ffmpeg", "-y", "-i", mp3_path,
-            "-ar", "16000", "-ac", "1", "-f", "wav", wav_path
-        ], check=True)
-        print(f"✅ Umgewandelt: {mp3_path} → {wav_path}")
-    except subprocess.CalledProcessError as e:
-        print("❌ Fehler bei ffmpeg-Konvertierung:", e)
-
+is_tts_playing = asyncio.Lock()
 
 async def stream_tts_to_client(client_ws: WebSocket, file_path: str):
     print("🔊 Starte Audioausgabe...")
     try:
-        async with aiofiles.open(file_path, mode='rb') as f:
-            chunk = await f.read(640)
-            while chunk:
-                await client_ws.send_bytes(chunk)
-                #print(f"🔈 Gesendet: {len(chunk)} Bytes aus TTS")
-                await asyncio.sleep(0.02)
+        async with is_tts_playing:  # Blockiere Transkription während der Ausgabe
+            async with aiofiles.open(file_path, mode='rb') as f:
                 chunk = await f.read(640)
+                while chunk:
+                    await client_ws.send_bytes(chunk)
+                    print(f"🔈 Gesendet: {len(chunk)} Bytes aus TTS")
+                    await asyncio.sleep(0.02)
+                    chunk = await f.read(640)
         print("✅ TTS-Ausgabe beendet")
     except Exception as e:
         print("⚠️ Fehler bei TTS-Ausgabe:", e)
-
 
 async def handle_audio_stream(client_ws: WebSocket):
     print("✅ WebSocket weitergeleitet an Deepgram")
@@ -64,22 +52,22 @@ async def handle_audio_stream(client_ws: WebSocket):
             async def receive_transcripts():
                 print("📡 Warte auf Deepgram-Transkript...")
                 async for message in dg_ws:
-                    print("🧾 Deepgram-Rohantwort:", message)
-                    try:
-                        msg = json.loads(message)
-                        transcript = msg.get("channel", {}).get("alternatives", [{}])[0].get("transcript", "")
-                        is_final = msg.get("is_final", False)
+                    async with is_tts_playing:  # Verhindert Transkription während TTS
+                        print("🧾 Deepgram-Rohantwort:", message)
+                        try:
+                            msg = json.loads(message)
+                            transcript = msg.get("channel", {}).get("alternatives", [{}])[0].get("transcript", "")
+                            is_final = msg.get("is_final", False)
 
-                        if transcript:
-                            print(f"📄 Transkript erkannt: {'(final)' if is_final else '(partial)'} → {transcript}")
+                            if transcript:
+                                print(f"📄 Transkript erkannt: {'(final)' if is_final else '(partial)'} → {transcript}")
 
-                        if is_final and transcript:
-                            await process_transcript(transcript)
-                            convert_mp3_to_wav("static/output.mp3", "static/output.wav")
-                            await stream_tts_to_client(client_ws, "static/output.wav")
+                            if is_final and transcript:
+                                await process_transcript(transcript)
+                                await stream_tts_to_client(client_ws, "static/output.wav")
 
-                    except Exception as e:
-                        print("⚠️ Fehler beim Verarbeiten der Deepgram-Antwort:", e)
+                        except Exception as e:
+                            print("⚠️ Fehler beim Verarbeiten der Deepgram-Antwort:", e)
 
             async def forward_audio():
                 print("📥 Warte auf Audioframes...")
@@ -94,7 +82,7 @@ async def handle_audio_stream(client_ws: WebSocket):
                                 with open("debug_capture.raw", "ab") as f:
                                     f.write(message["bytes"])
                                 await dg_ws.send(message["bytes"])
-                               # print(f"➡️ Frame {frame_count}: {len(message['bytes'])} Bytes")
+                                # Logging deaktiviert: print(f"➡️ Frame {frame_count}: {len(message['bytes'])} Bytes")
 
                             elif "text" in message:
                                 print(f"⚠️ Textframe ignoriert: {message['text']}")
