@@ -35,7 +35,7 @@ async def stream_tts_to_client(client_ws: WebSocket, file_path: str):
             chunk = await f.read(640)
             while chunk:
                 await client_ws.send_bytes(chunk)
-                print(f"🔈 Gesendet: {len(chunk)} Bytes aus TTS")
+                #print(f"🔈 Gesendet: {len(chunk)} Bytes aus TTS")
                 await asyncio.sleep(0.02)
                 chunk = await f.read(640)
         print("✅ TTS-Ausgabe beendet")
