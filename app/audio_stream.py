@@ -7,7 +7,6 @@ from dotenv import load_dotenv
 import os
 from app.gpt_logic import process_transcript
 
-# 🔐 Umgebungsvariablen laden
 load_dotenv()
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 if not DEEPGRAM_API_KEY:
@@ -15,16 +14,18 @@ if not DEEPGRAM_API_KEY:
 
 DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen?language=de"
 
-# 🔄 Hauptfunktion: empfängt und verarbeitet Audio
 async def handle_audio_stream(client_ws: WebSocket):
     headers = [("Authorization", f"Token {DEEPGRAM_API_KEY}")]
 
     try:
+        await client_ws.accept()
+        print("✅ WebSocket akzeptiert")
+
         async with websockets.connect(DEEPGRAM_URL, extra_headers=headers) as dg_ws:
             print("✅ Verbunden mit Deepgram")
 
-            # Empfang von Transkripten von Deepgram
             async def receive_transcripts():
+                print("📡 Warte auf Deepgram-Transkript...")
                 async for message in dg_ws:
                     print("🧾 Deepgram-Rohantwort:", message)
                     try:
@@ -41,8 +42,8 @@ async def handle_audio_stream(client_ws: WebSocket):
                     except Exception as e:
                         print("⚠️ Fehler beim Verarbeiten der Deepgram-Antwort:", e)
 
-            # Audio von Vonage empfangen und an Deepgram weiterleiten
             async def forward_audio():
+                print("📥 Warte auf Audioframes...")
                 try:
                     while True:
                         message = await client_ws.receive()
