@@ -1,14 +1,17 @@
 # app/main.py
+
+import os
+import json
 from fastapi import FastAPI, WebSocket, Request
 from fastapi.responses import Response, PlainTextResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from app.audio_stream import handle_audio_stream
-import json
+from app.audio_stream import audio_stream
 
+# Setup FastAPI App
 app = FastAPI()
 
-# CORS freigeben
+# CORS aktivieren (für WebSocket & lokale Tests)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,37 +19,45 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Statische Dateien (z.B. TTS-Ausgabe)
+# Static Files (z. B. TTS-Audio-Dateien)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# Health-Check
+@app.get("/")
+def root():
+    return {"status": "Callity läuft auf Render (WebSocket-fähig)"}
+
+# TTS-Download-Endpunkte
 @app.get("/tts")
 def get_tts():
     return FileResponse("static/output.wav", media_type="audio/wav")
 
 @app.get("/debug-audio")
 def get_debug_audio():
-    return FileResponse(path="debug_capture.raw", filename="debug_capture.raw", media_type="application/octet-stream")
+    file_path = "debug_capture.raw"
+    return FileResponse(path=file_path, filename="debug_capture.raw", media_type="application/octet-stream")
 
-# WebSocket-Preflight (Test)
+# WebSocket-Preflight
 @app.get("/ws/audio")
 async def ws_preflight():
-    return {"status": "WebSocket bereit"}
+    return {"status": "WebSocket verfügbar"}
 
-# WebSocket-Audioverarbeitung
+# WebSocket-Handler
 @app.websocket("/ws/audio")
 async def audio_ws(websocket: WebSocket):
-    await websocket.accept()
-    print("✅ WebSocket verbunden")
-    await handle_audio_stream(websocket)
-    print("❌ WebSocket getrennt")
+    async def on_final_transcript(transcript: str):
+        print(f"📩 Nutzer sagt: {transcript}")
+        # Hier könntest du GPT/Response/TTS einbauen
 
-# Vonage: Begrüßung + Weiterleitung an WebSocket
+    await audio_stream(websocket, on_final_transcript)
+
+# Vonage NCCO
 @app.api_route("/vonage/answer", methods=["GET", "POST"])
 async def vonage_answer(request: Request):
     ncco = [
         {
             "action": "talk",
-            "text": "Hallo, hier ist Callity. Wie kann ich dir helfen?",
+            "text": "Hallo, hier ist Callity. Wie kann ich Ihnen helfen?",
             "language": "de-DE",
             "voiceName": "Marlene",
             "style": 0
@@ -76,8 +87,3 @@ async def vonage_event(request: Request):
         return PlainTextResponse("OK")
     except Exception as e:
         return PlainTextResponse(f"error: {e}", status_code=500)
-
-# Health-Check
-@app.get("/")
-def root():
-    return {"status": "Callity läuft", "websocket": "/ws/audio"}
