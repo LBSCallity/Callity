@@ -3,7 +3,6 @@
 import os
 import requests
 import subprocess
-import aiofiles
 import asyncio
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -12,7 +11,7 @@ load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ELEVEN_API_KEY = os.getenv("ELEVEN_API_KEY")
-VOICE_ID = os.getenv("ELEVEN_VOICE_ID") or "EXAVITQu4vr4xnSDxMaL"  # Nicole
+VOICE_ID = os.getenv("ELEVEN_VOICE_ID") or "EXAVITQu4vr4xnSDxMaL"
 
 if not OPENAI_API_KEY:
     raise RuntimeError("❌ OPENAI_API_KEY fehlt")
@@ -21,12 +20,10 @@ if not ELEVEN_API_KEY:
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# Hintergrundfunktion zur TTS-Synthese + WAV-Konvertierung
 def run_tts_pipeline(reply: str):
     try:
         print("🧠 Starte TTS-Pipeline für: ", reply[:80])
 
-        # ElevenLabs TTS abrufen (MP3)
         tts_response = requests.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}",
             headers={
@@ -51,7 +48,6 @@ def run_tts_pipeline(reply: str):
                 f.write(tts_response.content)
             print("💾 TTS-Audio gespeichert als output.mp3")
 
-            # Konvertiere zu WAV (PCM 16bit, 16kHz, Mono)
             wav_path = os.path.join("static", "output.wav")
             result = subprocess.run([
                 "ffmpeg", "-y",
@@ -74,7 +70,6 @@ def run_tts_pipeline(reply: str):
         print("❌ Fehler in TTS-Pipeline:", e)
 
 
-# Hauptfunktion – GPT-Interaktion und Start der TTS-Verarbeitung
 async def process_transcript(transcript: str, state: dict):
     print(f"📩 Nutzer sagt: {transcript}")
 
@@ -98,14 +93,12 @@ async def process_transcript(transcript: str, state: dict):
 
         state["chat_history"].append({"role": "assistant", "content": reply})
 
-        # Starte TTS-Konvertierung als separaten Task (nicht-blockierend)
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, run_tts_pipeline, reply)
 
-        # Chatverlauf begrenzen
         MAX_TURNS = 6
         if len(state["chat_history"]) > MAX_TURNS * 2 + 1:
-            state["chat_history"] = state["chat_history"][:1] + state["chat_history\][-MAX_TURNS*2:]
+            state["chat_history"] = state["chat_history"][:1] + state["chat_history"][-MAX_TURNS*2:]
 
     except Exception as e:
         print("❌ Fehler bei GPT/TTS:", e)
