@@ -54,7 +54,7 @@ async def vonage_answer(request: Request):
     ncco = [
         {
             "action": "talk",
-            "text": "Hallo, hier ist Callity. Einen Moment, ich höre zu.",
+            "text": "Hallo, hier ist Callity. Wie kann ich Ihnen helfen?",
             "language": "de-DE",
             "voiceName": "Marlene",
             "style": 0

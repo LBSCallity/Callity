@@ -9,11 +9,15 @@ import os
 from app.gpt_logic import process_transcript
 
 load_dotenv()
+
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
+DEBUG_MODE = os.getenv("DEBUG", "false").lower() == "true"
+
 if not DEEPGRAM_API_KEY:
     raise RuntimeError("❌ DEEPGRAM_API_KEY fehlt")
 
 DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen?language=de&encoding=linear16&sample_rate=16000&channels=1"
+
 
 async def stream_tts_to_client(client_ws: WebSocket, file_path: str, state: dict):
     print("🔊 Starte Audioausgabe...")
@@ -31,36 +35,39 @@ async def stream_tts_to_client(client_ws: WebSocket, file_path: str, state: dict
     finally:
         state["is_playing_tts"] = False
 
+
 async def handle_audio_stream(client_ws: WebSocket):
     print("✅ WebSocket weitergeleitet an Deepgram")
     headers = [("Authorization", f"Token {DEEPGRAM_API_KEY}")]
     state = {
-    "is_playing_tts": False,
-    "chat_history": [
-        {"role": "system", "content": "Du bist ein deutschsprachiger, natürlicher Telefonassistent. Antworte höflich, freundlich und kurz."}
-    ]
-}
+        "is_playing_tts": False,
+        "chat_history": [
+            {"role": "system", "content": "Du bist ein deutschsprachiger, natürlicher Telefonassistent. Antworte höflich, freundlich und kurz."}
+        ]
+    }
 
     try:
         async with websockets.connect(DEEPGRAM_URL, extra_headers=headers) as dg_ws:
             print("✅ Verbunden mit Deepgram")
 
             async def receive_transcripts():
-                print("📡 Warte auf Deepgram-Transkript...")
+                print("📡 Warte auf Deepgram-Transkripte...")
                 try:
                     async for message in dg_ws:
-                        print("🧾 Deepgram-Rohantwort:", message)
                         try:
                             msg = json.loads(message)
                             transcript = msg.get("channel", {}).get("alternatives", [{}])[0].get("transcript", "")
                             is_final = msg.get("is_final", False)
 
-                            if transcript:
-                                print(f"📄 Transkript erkannt: {'(final)' if is_final else '(partial)'} → {transcript}")
-
                             if is_final and transcript:
-                                await process_transcript(transcript, state)
-                                await stream_tts_to_client(client_ws, "static/output.wav", state)
+                                print(f"📄 🎤 Finales Transkript: {transcript}")
+                                if len(transcript.strip().split()) >= 3:
+                                    await process_transcript(transcript, state)
+                                    await stream_tts_to_client(client_ws, "static/output.wav", state)
+                                else:
+                                    print("⚠️ Transkript zu kurz, ignoriert.")
+                            elif DEBUG_MODE and transcript:
+                                print(f"🖋️ Partial: {transcript}")
 
                         except Exception as e:
                             print("⚠️ Fehler beim Verarbeiten der Deepgram-Antwort:", e)
@@ -68,8 +75,8 @@ async def handle_audio_stream(client_ws: WebSocket):
                     print("❌ Fehler beim Empfang von Deepgram:", e)
 
             async def forward_audio():
-                print("📥 Warte auf Audioframes...")
-                frame_count = 0
+                if DEBUG_MODE:
+                    print("👉 Warte auf Audioframes...")
                 try:
                     while True:
                         message = await client_ws.receive()
@@ -77,13 +84,14 @@ async def handle_audio_stream(client_ws: WebSocket):
                         if message["type"] == "websocket.receive":
                             if "bytes" in message:
                                 if not state["is_playing_tts"]:
-                                    frame_count += 1
                                     await dg_ws.send(message["bytes"])
-                                    print(f"➡️ Frame {frame_count}: {len(message['bytes'])} Bytes")
+                                    if DEBUG_MODE:
+                                        print(f"➡️ Audioframe gesendet: {len(message['bytes'])} Bytes")
                                 else:
-                                    print("🔇 Audio ignoriert – TTS läuft")
+                                    if DEBUG_MODE:
+                                        print("🔇 Audio ignoriert – TTS läuft")
 
-                            elif "text" in message:
+                            elif "text" in message and DEBUG_MODE:
                                 print(f"⚠️ Textframe ignoriert: {message['text']}")
 
                         elif message["type"] == "websocket.disconnect":
@@ -92,7 +100,7 @@ async def handle_audio_stream(client_ws: WebSocket):
                 except Exception as e:
                     print("🔚 Verbindung beendet:", e)
                     try:
-                        await dg_ws.send(json.dumps({"type": "CloseStream"}))
+                        await dg_ws.close()
                     except:
                         pass
 
