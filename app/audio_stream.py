@@ -19,20 +19,25 @@ if not DEEPGRAM_API_KEY:
 DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen?language=de&encoding=linear16&sample_rate=16000&channels=1"
 
 
-async def stream_tts_to_client(client_ws: WebSocket, file_path: str, state: dict):
+async def stream_tts_to_client(client_ws: WebSocket, dg_ws, file_path: str, state: dict):
     print("🔊 Starte Audioausgabe...")
     state["is_playing_tts"] = True
+    silent_chunk = b'\x00' * 640
+
     try:
-        # Warte, bis Datei existiert (max. 10 Sek.)
-        for _ in range(100):
+        # Warte mit Keep-Alive-Stille auf TTS-Datei (max. 10 Sek.)
+        for _ in range(50):
             if os.path.exists(file_path):
                 break
-            await asyncio.sleep(0.1)
+            await client_ws.send_bytes(silent_chunk)  # Für Vonage
+            await dg_ws.send(silent_chunk)            # Für Deepgram
+            await asyncio.sleep(0.2)
         else:
             print("❌ WAV-Datei wurde nicht rechtzeitig erstellt")
             state["is_playing_tts"] = False
             return
 
+        # Datei streamen
         async with aiofiles.open(file_path, mode='rb') as f:
             chunk = await f.read(640)
             while chunk:
@@ -40,8 +45,10 @@ async def stream_tts_to_client(client_ws: WebSocket, file_path: str, state: dict
                 await asyncio.sleep(0.02)
                 chunk = await f.read(640)
         print("✅ TTS-Ausgabe beendet")
+
     except Exception as e:
         print("⚠️ Fehler bei TTS-Ausgabe:", e)
+
     finally:
         state["is_playing_tts"] = False
 
@@ -73,7 +80,7 @@ async def handle_audio_stream(client_ws: WebSocket):
                                 print(f"📄 🎤 Finales Transkript: {transcript}")
                                 if len(transcript.strip().split()) >= 3:
                                     await process_transcript(transcript, state)
-                                    await stream_tts_to_client(client_ws, "static/output.wav", state)
+                                    await stream_tts_to_client(client_ws, dg_ws, "static/output.wav", state)
                                 else:
                                     print("⚠️ Transkript zu kurz, ignoriert.")
                             elif DEBUG_MODE and transcript:
