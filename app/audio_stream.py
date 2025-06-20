@@ -22,21 +22,17 @@ DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen?language=de&encoding=linear16&s
 async def stream_tts_to_client(client_ws: WebSocket, file_path: str, state: dict):
     print("🔊 Starte Audioausgabe...")
     state["is_playing_tts"] = True
-    silent_chunk = b'\x00' * 640
-
     try:
-        # Warte mit Keep-Alive-Stille auf TTS-Datei (max. 10 Sek.)
-        for _ in range(50):
+        # Warte, bis Datei existiert (max. 10 Sek.)
+        for _ in range(100):
             if os.path.exists(file_path):
                 break
-            await client_ws.send_bytes(silent_chunk)
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.1)
         else:
             print("❌ WAV-Datei wurde nicht rechtzeitig erstellt")
             state["is_playing_tts"] = False
             return
 
-        # Datei streamen
         async with aiofiles.open(file_path, mode='rb') as f:
             chunk = await f.read(640)
             while chunk:
@@ -44,10 +40,8 @@ async def stream_tts_to_client(client_ws: WebSocket, file_path: str, state: dict
                 await asyncio.sleep(0.02)
                 chunk = await f.read(640)
         print("✅ TTS-Ausgabe beendet")
-
     except Exception as e:
         print("⚠️ Fehler bei TTS-Ausgabe:", e)
-
     finally:
         state["is_playing_tts"] = False
 
