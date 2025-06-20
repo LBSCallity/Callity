@@ -34,7 +34,12 @@ async def stream_tts_to_client(client_ws: WebSocket, file_path: str, state: dict
 async def handle_audio_stream(client_ws: WebSocket):
     print("✅ WebSocket weitergeleitet an Deepgram")
     headers = [("Authorization", f"Token {DEEPGRAM_API_KEY}")]
-    state = {"is_playing_tts": False}
+    state = {
+    "is_playing_tts": False,
+    "chat_history": [
+        {"role": "system", "content": "Du bist ein deutschsprachiger, natürlicher Telefonassistent. Antworte höflich, freundlich und kurz."}
+    ]
+}
 
     try:
         async with websockets.connect(DEEPGRAM_URL, extra_headers=headers) as dg_ws:
@@ -54,7 +59,7 @@ async def handle_audio_stream(client_ws: WebSocket):
                                 print(f"📄 Transkript erkannt: {'(final)' if is_final else '(partial)'} → {transcript}")
 
                             if is_final and transcript:
-                                await process_transcript(transcript)
+                                await process_transcript(transcript, state)
                                 await stream_tts_to_client(client_ws, "static/output.wav", state)
 
                         except Exception as e:

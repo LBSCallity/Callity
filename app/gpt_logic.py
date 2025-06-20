@@ -1,4 +1,5 @@
 # app/gpt_logic.py
+
 import os
 import requests
 import subprocess
@@ -18,17 +19,24 @@ if not ELEVEN_API_KEY:
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-async def process_transcript(transcript: str):
+# 👇 Funktion für vollständige Verarbeitung inkl. Kontext
+async def process_transcript(transcript: str, state: dict):
     print(f"📩 Anfrage an GPT: {transcript}")
 
+    # Initialisiere Verlauf, falls nicht vorhanden
+    if "chat_history" not in state:
+        state["chat_history"] = [
+            {"role": "system", "content": "Du bist ein deutschsprachiger, natürlicher Telefonassistent. Antworte höflich, freundlich und kurz."}
+        ]
+
+    # Neue Nutzeranfrage hinzufügen
+    state["chat_history"].append({"role": "user", "content": transcript})
+
     try:
-        # GPT-4-Antwort generieren
+        # GPT-Antwort holen mit Verlauf
         completion = client.chat.completions.create(
             model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "Du bist ein deutschsprachiger, natürlicher Telefonassistent. Antworte höflich, freundlich und kurz."},
-                {"role": "user", "content": transcript}
-            ],
+            messages=state["chat_history"],
             temperature=0.6,
             max_tokens=200
         )
@@ -36,7 +44,10 @@ async def process_transcript(transcript: str):
         reply = completion.choices[0].message.content.strip()
         print(f"🤖 GPT-Antwort: {reply}")
 
-        # TTS von ElevenLabs als MP3
+        # Antwort merken
+        state["chat_history"].append({"role": "assistant", "content": reply})
+
+        # Audio anfordern
         tts_response = requests.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}",
             headers={
@@ -55,19 +66,19 @@ async def process_transcript(transcript: str):
         )
 
         if tts_response.status_code == 200:
-            # MP3 speichern
+            # Speichere MP3
             mp3_path = os.path.join("static", "output.mp3")
             with open(mp3_path, "wb") as f:
                 f.write(tts_response.content)
             print("💾 TTS-Audio gespeichert als output.mp3")
 
-            # Mit ffmpeg konvertieren in korrektes PCM-Format
+            # Konvertiere in WAV (PCM 16kHz Mono)
             wav_path = os.path.join("static", "output.wav")
             result = subprocess.run([
                 "ffmpeg", "-y",
                 "-i", mp3_path,
-                "-ar", "16000",  # 16kHz
-                "-ac", "1",      # Mono
+                "-ar", "16000",
+                "-ac", "1",
                 "-f", "wav",
                 wav_path
             ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -77,9 +88,13 @@ async def process_transcript(transcript: str):
             else:
                 print("❌ Fehler bei ffmpeg-Konvertierung:")
                 print(result.stderr.decode())
-
         else:
             print("❌ TTS-Fehler:", tts_response.status_code, tts_response.text)
+
+        # Verlauf begrenzen (max. 6 Gesprächsrunden)
+        MAX_TURNS = 6
+        if len(state["chat_history"]) > MAX_TURNS * 2 + 1:
+            state["chat_history"] = state["chat_history"][:1] + state["chat_history"][-MAX_TURNS*2:]
 
     except Exception as e:
         print("❌ Fehler in process_transcript():", e)
