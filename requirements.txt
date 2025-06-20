@@ -7,4 +7,3 @@ requests
 aiofiles
 python-multipart
 pydub
-aiohttp

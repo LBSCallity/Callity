@@ -1,4 +1,3 @@
-# app/audio_stream.py
 import asyncio
 import json
 import websockets
@@ -13,7 +12,10 @@ DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 if not DEEPGRAM_API_KEY:
     raise RuntimeError("❌ DEEPGRAM_API_KEY fehlt")
 
-DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen?language=de&encoding=linear16&sample_rate=16000&channels=1"
+DEEPGRAM_URL = (
+    "wss://api.deepgram.com/v1/listen?"
+    "language=de&encoding=linear16&sample_rate=16000&channels=1"
+)
 
 async def stream_tts_to_client(client_ws: WebSocket, file_path: str, state: dict):
     print("🔊 Starte Audioausgabe...")
@@ -21,11 +23,11 @@ async def stream_tts_to_client(client_ws: WebSocket, file_path: str, state: dict
     try:
         async with aiofiles.open(file_path, mode='rb') as f:
             while True:
-                chunk = await f.read(640)
+                chunk = await f.read(3200)  # 100ms Audio bei 16kHz, mono, 16bit
                 if not chunk:
                     break
                 await client_ws.send_bytes(chunk)
-                await asyncio.sleep(0.02)
+                await asyncio.sleep(0.1)  # Pause passend zur Audiomenge
         print("✅ TTS-Ausgabe beendet")
     except Exception as e:
         print("⚠️ Fehler bei TTS-Ausgabe:", e)
@@ -55,8 +57,6 @@ async def handle_audio_stream(client_ws: WebSocket):
 
                         if transcript and is_final:
                             print(f"📄 🎤 Finales Transkript: {transcript}")
-
-                            # Mindestlänge (z.B. mehr als 3 Worte)
                             if len(transcript.strip().split()) < 3:
                                 print("⚠️ Transkript zu kurz, ignoriert.")
                                 continue
@@ -76,8 +76,7 @@ async def handle_audio_stream(client_ws: WebSocket):
                             if "bytes" in message and not state["is_playing_tts"]:
                                 await dg_ws.send(message["bytes"])
                             elif "bytes" in message and state["is_playing_tts"]:
-                                # Sende Stille, um Deepgram nicht in Timeout laufen zu lassen
-                                await dg_ws.send(b'\x00' * 640)
+                                await dg_ws.send(b'\x00' * 3200)  # Dummy-Silence während TTS
                         elif message["type"] == "websocket.disconnect":
                             print("❌ WebSocket wurde getrennt")
                             break
