@@ -1,75 +1,94 @@
-import os
-import json
+# app/audio_stream.py
 import asyncio
+import json
 import websockets
-import traceback
+import aiofiles
 from fastapi import WebSocket
+from dotenv import load_dotenv
+import os
+from app.gpt_logic import process_transcript
 
+load_dotenv()
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
-MIN_TRANSCRIPT_LENGTH = 4
+if not DEEPGRAM_API_KEY:
+    raise RuntimeError("❌ DEEPGRAM_API_KEY fehlt")
 
-async def forward_audio_to_deepgram(ws: WebSocket, dg_ws):
+DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen?language=de&encoding=linear16&sample_rate=16000&channels=1"
+
+async def stream_tts_to_client(client_ws: WebSocket, file_path: str, state: dict):
+    print("🔊 Starte Audioausgabe...")
+    state["is_playing_tts"] = True
     try:
-        while True:
-            message = await ws.receive()
-            if message["type"] == "websocket.receive":
-                if "bytes" in message:
-                    await dg_ws.send(message["bytes"])
-                elif "text" in message:
-                    print("⚠️ Ignorierter Text vom WebSocket:", message["text"])
-            elif message["type"] == "websocket.disconnect":
-                print("🔌 WebSocket wurde getrennt (clientseitig)")
-                break
+        async with aiofiles.open(file_path, mode='rb') as f:
+            while True:
+                chunk = await f.read(640)
+                if not chunk:
+                    break
+                await client_ws.send_bytes(chunk)
+                await asyncio.sleep(0.02)
+        print("✅ TTS-Ausgabe beendet")
     except Exception as e:
-        print("❌ Fehler beim Weiterleiten an Deepgram:", e)
-        traceback.print_exc()
-
-async def receive_from_deepgram(dg_ws, on_final_transcript):
-    try:
-        async for msg in dg_ws:
-            data = json.loads(msg)
-            transcript_obj = data.get("channel", {}).get("alternatives", [{}])[0]
-            transcript = transcript_obj.get("transcript", "")
-            is_final = data.get("is_final", False)
-
-            if transcript and is_final:
-                if len(transcript.strip()) < MIN_TRANSCRIPT_LENGTH:
-                    print("⚠️ Transkript zu kurz, ignoriert.")
-                    continue
-                print(f"🗣️ Nutzer: {transcript}")
-                await on_final_transcript(transcript)
-    except Exception as e:
-        print("❌ Fehler bei Deepgram-Empfang:", e)
-        traceback.print_exc()
-
-async def audio_stream(ws: WebSocket, on_final_transcript):
-    await ws.accept()
-    print("🚀 WebSocket-Verbindung aufgebaut")
-
-    try:
-        deepgram_url = "wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000"
-        headers = {"Authorization": f"Token {DEEPGRAM_API_KEY}"}
-
-        async with websockets.connect(deepgram_url, extra_headers=headers) as dg_ws:
-            print("✅ Deepgram verbunden")
-
-            forward_task = asyncio.create_task(forward_audio_to_deepgram(ws, dg_ws))
-            receive_task = asyncio.create_task(receive_from_deepgram(dg_ws, on_final_transcript))
-
-            done, pending = await asyncio.wait(
-                [forward_task, receive_task],
-                return_when=asyncio.FIRST_COMPLETED
-            )
-
-            for task in pending:
-                task.cancel()
-    except Exception as e:
-        print("❌ Deepgram-Verbindungsfehler:", e)
-        traceback.print_exc()
+        print("⚠️ Fehler bei TTS-Ausgabe:", e)
     finally:
-        if not ws.client_state.name == "DISCONNECTED":
-            try:
-                await ws.close()
-            except RuntimeError:
-                pass  # wurde schon geschlossen
-        print("🔚 Verbindung sauber beendet")
+        state["is_playing_tts"] = False
+
+async def handle_audio_stream(client_ws: WebSocket):
+    print("✅ WebSocket weitergeleitet an Deepgram")
+    headers = [("Authorization", f"Token {DEEPGRAM_API_KEY}")]
+    state = {
+        "is_playing_tts": False,
+        "chat_history": [
+            {"role": "system", "content": "Du bist ein deutschsprachiger, freundlicher Telefonassistent."}
+        ]
+    }
+
+    try:
+        async with websockets.connect(DEEPGRAM_URL, extra_headers=headers) as dg_ws:
+            print("✅ Verbunden mit Deepgram")
+
+            async def receive_transcripts():
+                try:
+                    async for message in dg_ws:
+                        msg = json.loads(message)
+                        transcript = msg.get("channel", {}).get("alternatives", [{}])[0].get("transcript", "")
+                        is_final = msg.get("is_final", False)
+
+                        if transcript and is_final:
+                            print(f"📄 🎤 Finales Transkript: {transcript}")
+
+                            # Mindestlänge (z.B. mehr als 3 Worte)
+                            if len(transcript.strip().split()) < 3:
+                                print("⚠️ Transkript zu kurz, ignoriert.")
+                                continue
+
+                            await process_transcript(transcript, state)
+                            await stream_tts_to_client(client_ws, "static/output.wav", state)
+                except Exception as e:
+                    print("❌ Fehler beim Empfang von Deepgram:", e)
+
+            async def forward_audio():
+                print("📥 Warte auf Audioframes...")
+                try:
+                    while True:
+                        message = await client_ws.receive()
+
+                        if message["type"] == "websocket.receive":
+                            if "bytes" in message and not state["is_playing_tts"]:
+                                await dg_ws.send(message["bytes"])
+                            elif "bytes" in message and state["is_playing_tts"]:
+                                # Sende Stille, um Deepgram nicht in Timeout laufen zu lassen
+                                await dg_ws.send(b'\x00' * 640)
+                        elif message["type"] == "websocket.disconnect":
+                            print("❌ WebSocket wurde getrennt")
+                            break
+                except Exception as e:
+                    print("🔚 Verbindung beendet:", e)
+                    try:
+                        await dg_ws.send(json.dumps({"type": "CloseStream"}))
+                    except:
+                        pass
+
+            await asyncio.gather(receive_transcripts(), forward_audio())
+
+    except Exception as e:
+        print("❌ Fehler bei Verbindung zu Deepgram:", e)
