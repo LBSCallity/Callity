@@ -15,16 +15,17 @@ if not DEEPGRAM_API_KEY:
 
 DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen?language=de&encoding=linear16&sample_rate=16000&channels=1"
 
-async def stream_tts_to_client(client_ws: WebSocket, dg_ws, file_path: str, state: dict):
+async def stream_tts_to_client(client_ws: WebSocket, file_path: str, state: dict):
     print("🔊 Starte Audioausgabe...")
     state["is_playing_tts"] = True
     try:
         async with aiofiles.open(file_path, mode='rb') as f:
-            chunk = await f.read(640)
-            while chunk:
+            while True:
+                chunk = await f.read(640)
+                if not chunk:
+                    break
                 await client_ws.send_bytes(chunk)
                 await asyncio.sleep(0.02)
-                chunk = await f.read(640)
         print("✅ TTS-Ausgabe beendet")
     except Exception as e:
         print("⚠️ Fehler bei TTS-Ausgabe:", e)
@@ -37,7 +38,7 @@ async def handle_audio_stream(client_ws: WebSocket):
     state = {
         "is_playing_tts": False,
         "chat_history": [
-            {"role": "system", "content": "Du bist ein deutschsprachiger, natürlicher Telefonassistent. Antworte höflich, freundlich und kurz."}
+            {"role": "system", "content": "Du bist ein deutschsprachiger, freundlicher Telefonassistent."}
         ]
     }
 
@@ -46,34 +47,22 @@ async def handle_audio_stream(client_ws: WebSocket):
             print("✅ Verbunden mit Deepgram")
 
             async def receive_transcripts():
-                print("📡 Warte auf Deepgram-Transkripte...")
                 try:
                     async for message in dg_ws:
                         msg = json.loads(message)
                         transcript = msg.get("channel", {}).get("alternatives", [{}])[0].get("transcript", "")
                         is_final = msg.get("is_final", False)
 
-                        if transcript:
-                            print(f"📄 🎤 Finales Transkript: {'(final)' if is_final else '(partial)'} → {transcript}")
+                        if transcript and is_final:
+                            print(f"📄 🎤 Finales Transkript: {transcript}")
 
-                        if is_final and transcript:
+                            # Mindestlänge (z.B. mehr als 3 Worte)
                             if len(transcript.strip().split()) < 3:
                                 print("⚠️ Transkript zu kurz, ignoriert.")
                                 continue
 
                             await process_transcript(transcript, state)
-
-                            # 🧠 Warte auf TTS-Datei + Halte Deepgram/Vonage wach
-                            silent_chunk = b'\x00' * 640
-                            for _ in range(50):  # max 10 Sek
-                                if os.path.exists("static/output.wav"):
-                                    break
-                                await client_ws.send_bytes(silent_chunk)
-                                await dg_ws.send(silent_chunk)
-                                await asyncio.sleep(0.2)
-
-                            await stream_tts_to_client(client_ws, dg_ws, "static/output.wav", state)
-
+                            await stream_tts_to_client(client_ws, "static/output.wav", state)
                 except Exception as e:
                     print("❌ Fehler beim Empfang von Deepgram:", e)
 
@@ -86,9 +75,9 @@ async def handle_audio_stream(client_ws: WebSocket):
                         if message["type"] == "websocket.receive":
                             if "bytes" in message and not state["is_playing_tts"]:
                                 await dg_ws.send(message["bytes"])
-                            elif "text" in message:
-                                print(f"⚠️ Textframe ignoriert: {message['text']}")
-
+                            elif "bytes" in message and state["is_playing_tts"]:
+                                # Sende Stille, um Deepgram nicht in Timeout laufen zu lassen
+                                await dg_ws.send(b'\x00' * 640)
                         elif message["type"] == "websocket.disconnect":
                             print("❌ WebSocket wurde getrennt")
                             break

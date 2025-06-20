@@ -7,6 +7,7 @@ import asyncio
 from openai import OpenAI
 from dotenv import load_dotenv
 
+# Load environment variables
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -20,9 +21,9 @@ if not ELEVEN_API_KEY:
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-def run_tts_pipeline(reply: str):
+def run_tts_pipeline(reply: str) -> bool:
     try:
-        print("🧠 Starte TTS-Pipeline für: ", reply[:80])
+        print("🧠 Starte TTS-Pipeline für:", reply[:80])
 
         tts_response = requests.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}",
@@ -39,36 +40,37 @@ def run_tts_pipeline(reply: str):
                     "similarity_boost": 0.75
                 }
             },
-            timeout=15
+            timeout=20
         )
 
-        if tts_response.status_code == 200:
-            mp3_path = os.path.join("static", "output.mp3")
-            with open(mp3_path, "wb") as f:
-                f.write(tts_response.content)
-            print("💾 TTS-Audio gespeichert als output.mp3")
+        if tts_response.status_code != 200:
+            print("❌ TTS fehlgeschlagen:", tts_response.status_code)
+            return False
 
-            wav_path = os.path.join("static", "output.wav")
-            result = subprocess.run([
-                "ffmpeg", "-y",
-                "-i", mp3_path,
-                "-ar", "16000",
-                "-ac", "1",
-                "-f", "wav",
-                wav_path
-            ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        mp3_path = os.path.join("static", "output.mp3")
+        with open(mp3_path, "wb") as f:
+            f.write(tts_response.content)
 
-            if result.returncode == 0:
-                print("🔁 WAV erfolgreich konvertiert")
-            else:
-                print("❌ ffmpeg Fehler:", result.stderr.decode())
+        wav_path = os.path.join("static", "output.wav")
+        result = subprocess.run([
+            "ffmpeg", "-y",
+            "-i", mp3_path,
+            "-ar", "16000",
+            "-ac", "1",
+            "-f", "wav",
+            wav_path
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        else:
-            print("❌ TTS-Fehler:", tts_response.status_code, tts_response.text)
+        if result.returncode != 0:
+            print("❌ ffmpeg-Fehler:", result.stderr.decode())
+            return False
+
+        print("🔁 WAV erfolgreich konvertiert")
+        return True
 
     except Exception as e:
         print("❌ Fehler in TTS-Pipeline:", e)
-
+        return False
 
 async def process_transcript(transcript: str, state: dict):
     print(f"📩 Nutzer sagt: {transcript}")
@@ -94,8 +96,13 @@ async def process_transcript(transcript: str, state: dict):
         state["chat_history"].append({"role": "assistant", "content": reply})
 
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, run_tts_pipeline, reply)
+        success = await loop.run_in_executor(None, run_tts_pipeline, reply)
 
+        if not success:
+            print("⚠️ TTS fehlgeschlagen, keine Audioausgabe.")
+            return
+
+        # Chatverlauf begrenzen
         MAX_TURNS = 6
         if len(state["chat_history"]) > MAX_TURNS * 2 + 1:
             state["chat_history"] = state["chat_history"][:1] + state["chat_history"][-MAX_TURNS*2:]
