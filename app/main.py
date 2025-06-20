@@ -1,17 +1,11 @@
 # app/main.py
 from fastapi import FastAPI, WebSocket, Request
-from fastapi.responses import Response, PlainTextResponse
+from fastapi.responses import Response, PlainTextResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-import json
-import os
-from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-
-
-# Callity: Audioverarbeitung ausgelagert
 from app.audio_stream import handle_audio_stream
+import json
 
-# Render-kompatible FastAPI-App
 app = FastAPI()
 
 # CORS freigeben
@@ -22,10 +16,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from fastapi.staticfiles import StaticFiles
-
+# Statische Dateien (z.B. TTS-Ausgabe)
 app.mount("/static", StaticFiles(directory="static"), name="static")
-
 
 @app.get("/tts")
 def get_tts():
@@ -33,28 +25,28 @@ def get_tts():
 
 @app.get("/debug-audio")
 def get_debug_audio():
-    file_path = "debug_capture.raw"
-    return FileResponse(path=file_path, filename="debug_capture.raw", media_type="application/octet-stream")
+    return FileResponse(path="debug_capture.raw", filename="debug_capture.raw", media_type="application/octet-stream")
 
-# WebSocket-Preflight
+# WebSocket-Preflight (Test)
 @app.get("/ws/audio")
 async def ws_preflight():
-    return {"status": "WebSocket verfügbar"}
+    return {"status": "WebSocket bereit"}
 
-# WebSocket-Audio-Handler
+# WebSocket-Audioverarbeitung
 @app.websocket("/ws/audio")
 async def audio_ws(websocket: WebSocket):
     await websocket.accept()
-    print("🚀 WebSocket-Verbindung aufgebaut")
+    print("✅ WebSocket verbunden")
     await handle_audio_stream(websocket)
+    print("❌ WebSocket getrennt")
 
-# Vonage NCCO → Begrüßung + WebSocket-Verbindung
+# Vonage: Begrüßung + Weiterleitung an WebSocket
 @app.api_route("/vonage/answer", methods=["GET", "POST"])
 async def vonage_answer(request: Request):
     ncco = [
         {
             "action": "talk",
-            "text": "Hallo, hier ist Callity. Wie kann ich Ihnen helfen?",
+            "text": "Hallo, hier ist Callity. Wie kann ich dir helfen?",
             "language": "de-DE",
             "voiceName": "Marlene",
             "style": 0
@@ -75,8 +67,7 @@ async def vonage_answer(request: Request):
     ]
     return Response(content=json.dumps(ncco), media_type="application/json")
 
-
-# Vonage Event-Logging
+# Vonage Events loggen
 @app.api_route("/vonage/event", methods=["GET", "POST"])
 async def vonage_event(request: Request):
     try:
@@ -89,4 +80,4 @@ async def vonage_event(request: Request):
 # Health-Check
 @app.get("/")
 def root():
-    return {"status": "Callity läuft auf Render (WebSocket-fähig)"}
+    return {"status": "Callity läuft", "websocket": "/ws/audio"}
