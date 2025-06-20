@@ -2,67 +2,72 @@ import os
 import json
 import asyncio
 import websockets
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from app.gpt_logic import process_transcript
-from app.utils import save_temp_wav, convert_mulaw_to_wav
+import aiohttp
+import wave
+import traceback
+from fastapi import WebSocket
 
-router = APIRouter()
+DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 
-@router.websocket("/ws/audio")
-async def handle_audio_stream(websocket: WebSocket):
-    await websocket.accept()
+MIN_TRANSCRIPT_LENGTH = 4  # Mindestanzahl an Zeichen
+
+async def forward_audio_to_deepgram(ws: WebSocket, dg_ws, state):
+    try:
+        while True:
+            message = await ws.receive_bytes()
+            if message:
+                await dg_ws.send(message)
+    except Exception as e:
+        print("❌ Fehler beim Senden an Deepgram:", e)
+
+async def receive_from_deepgram(dg_ws, state, on_final_transcript):
+    try:
+        async for msg in dg_ws:
+            data = json.loads(msg)
+            transcript_obj = data.get("channel", {}).get("alternatives", [{}])[0]
+            transcript = transcript_obj.get("transcript", "")
+            is_final = data.get("is_final", False)
+
+            if transcript and is_final:
+                print(f"📄 🎤 Finales Transkript: (final) → {transcript}")
+
+                # Filter: zu kurz = ignorieren
+                if len(transcript.strip()) < MIN_TRANSCRIPT_LENGTH:
+                    print("⚠️ Transkript zu kurz, ignoriert.")
+                    continue
+
+                await on_final_transcript(transcript)
+
+    except Exception as e:
+        print("❌ Fehler beim Empfang von Deepgram:", e)
+        traceback.print_exc()
+
+async def audio_stream(ws: WebSocket, on_final_transcript):
+    await ws.accept()
     print("🚀 WebSocket-Verbindung aufgebaut")
 
-    # Deepgram-Stream verbinden
-    dg_ws = await websockets.connect(
-        "wss://api.deepgram.com/v1/listen",
-        extra_headers={"Authorization": f"Token {os.getenv('DEEPGRAM_API_KEY')}",
-                       "Content-Type": "application/json"},
-    )
-    print("✅ Verbunden mit Deepgram")
-
-    # Initiale Konfig senden
-    await dg_ws.send(json.dumps({
-        "type": "start",
-        "encoding": "mulaw",
-        "sample_rate": 8000,
-        "channels": 1,
-        "endpointing": True,
-        "interim_results": False,
-    }))
-
-    state = {
-        "chat_history": [],
-        "is_playing_tts": False
-    }
-
     try:
-        async def receive_from_client():
-            while True:
-                data = await websocket.receive_bytes()
-                if not state["is_playing_tts"]:
-                    await dg_ws.send(data)
+        deepgram_url = f"wss://api.deepgram.com/v1/listen?encoding=mulaw&sample_rate=8000"
+        headers = {"Authorization": f"Token {DEEPGRAM_API_KEY}"}
 
-        async def receive_from_deepgram():
-            async for msg in dg_ws:
-                message = json.loads(msg)
-                transcript = message.get("channel", {}).get("alternatives", [{}])[0].get("transcript")
-                if transcript and len(transcript.strip()) > 3:
-                    print(f"📄 🎤 Finales Transkript: {transcript}")
-                    await process_transcript(transcript.strip(), state, websocket, dg_ws)
-                else:
-                    print(f"⚠️ Transkript zu kurz, ignoriert.")
+        async with websockets.connect(deepgram_url, extra_headers=headers) as dg_ws:
+            print("✅ Verbunden mit Deepgram")
+            state = {}
 
-        await asyncio.gather(
-            receive_from_client(),
-            receive_from_deepgram(),
-        )
+            forward_task = asyncio.create_task(forward_audio_to_deepgram(ws, dg_ws, state))
+            receive_task = asyncio.create_task(receive_from_deepgram(dg_ws, state, on_final_transcript))
 
-    except WebSocketDisconnect:
-        print("🔌 WebSocket getrennt")
+            done, pending = await asyncio.wait(
+                [forward_task, receive_task],
+                return_when=asyncio.FIRST_EXCEPTION,
+            )
+
+            for task in pending:
+                task.cancel()
+
     except Exception as e:
-        print(f"❌ Fehler im AudioStream: {e}")
+        print("❌ Deepgram-Verbindungsfehler:", e)
+        traceback.print_exc()
     finally:
-        await dg_ws.close()
-        await websocket.close()
-        print("🔚 Verbindung beendet")
+        await ws.close()
+        print("🔚 Verbindung geschlossen")
