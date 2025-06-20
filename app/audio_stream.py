@@ -2,8 +2,6 @@ import os
 import json
 import asyncio
 import websockets
-import aiohttp
-import wave
 import traceback
 from fastapi import WebSocket
 
@@ -14,30 +12,39 @@ MIN_TRANSCRIPT_LENGTH = 4  # Mindestanzahl an Zeichen
 async def forward_audio_to_deepgram(ws: WebSocket, dg_ws, state):
     try:
         while True:
-            message = await ws.receive_bytes()
-            if message:
-                await dg_ws.send(message)
+            try:
+                message = await ws.receive_bytes()
+                if isinstance(message, bytes) and message:
+                    await dg_ws.send(message)
+                else:
+                    print("⚠️ Ungültiges Audioformat empfangen oder leer.")
+            except Exception as e:
+                print("❌ Fehler beim Empfang von Audio über WebSocket:", e)
+                break
     except Exception as e:
         print("❌ Fehler beim Senden an Deepgram:", e)
+        traceback.print_exc()
 
 async def receive_from_deepgram(dg_ws, state, on_final_transcript):
     try:
         async for msg in dg_ws:
-            data = json.loads(msg)
-            transcript_obj = data.get("channel", {}).get("alternatives", [{}])[0]
-            transcript = transcript_obj.get("transcript", "")
-            is_final = data.get("is_final", False)
+            try:
+                data = json.loads(msg)
+                transcript_obj = data.get("channel", {}).get("alternatives", [{}])[0]
+                transcript = transcript_obj.get("transcript", "")
+                is_final = data.get("is_final", False)
 
-            if transcript and is_final:
-                print(f"📄 🎤 Finales Transkript: (final) → {transcript}")
+                if transcript and is_final:
+                    print(f"📄 🎤 Finales Transkript: (final) → {transcript}")
 
-                # Filter: zu kurz = ignorieren
-                if len(transcript.strip()) < MIN_TRANSCRIPT_LENGTH:
-                    print("⚠️ Transkript zu kurz, ignoriert.")
-                    continue
+                    if len(transcript.strip()) < MIN_TRANSCRIPT_LENGTH:
+                        print("⚠️ Transkript zu kurz, ignoriert.")
+                        continue
 
-                await on_final_transcript(transcript)
+                    await on_final_transcript(transcript)
 
+            except Exception as e:
+                print("❌ Fehler beim Verarbeiten der Deepgram-Nachricht:", e)
     except Exception as e:
         print("❌ Fehler beim Empfang von Deepgram:", e)
         traceback.print_exc()
@@ -47,7 +54,7 @@ async def audio_stream(ws: WebSocket, on_final_transcript):
     print("🚀 WebSocket-Verbindung aufgebaut")
 
     try:
-        deepgram_url = f"wss://api.deepgram.com/v1/listen?encoding=mulaw&sample_rate=8000"
+        deepgram_url = "wss://api.deepgram.com/v1/listen?encoding=mulaw&sample_rate=8000"
         headers = {"Authorization": f"Token {DEEPGRAM_API_KEY}"}
 
         async with websockets.connect(deepgram_url, extra_headers=headers) as dg_ws:
