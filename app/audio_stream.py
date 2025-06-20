@@ -3,9 +3,9 @@ import asyncio
 import json
 import websockets
 import aiofiles
+import os
 from fastapi import WebSocket
 from dotenv import load_dotenv
-import os
 from app.gpt_logic import process_transcript
 
 load_dotenv()
@@ -23,6 +23,16 @@ async def stream_tts_to_client(client_ws: WebSocket, file_path: str, state: dict
     print("🔊 Starte Audioausgabe...")
     state["is_playing_tts"] = True
     try:
+        # Warte, bis Datei existiert (max. 10 Sek.)
+        for _ in range(100):
+            if os.path.exists(file_path):
+                break
+            await asyncio.sleep(0.1)
+        else:
+            print("❌ WAV-Datei wurde nicht rechtzeitig erstellt")
+            state["is_playing_tts"] = False
+            return
+
         async with aiofiles.open(file_path, mode='rb') as f:
             chunk = await f.read(640)
             while chunk:
@@ -67,7 +77,7 @@ async def handle_audio_stream(client_ws: WebSocket):
                                 else:
                                     print("⚠️ Transkript zu kurz, ignoriert.")
                             elif DEBUG_MODE and transcript:
-                                print(f"🖋️ Partial: {transcript}")
+                                print(f"📝 Partial: {transcript}")
 
                         except Exception as e:
                             print("⚠️ Fehler beim Verarbeiten der Deepgram-Antwort:", e)
